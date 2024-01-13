@@ -1,0 +1,8 @@
+Partlist exported from C:/Users/lmnew/OneDrive/Documents/EAGLE/projects/JKBMStoCAN/board1.sch at 7/11/2023 5:58 PM
+
+Qty Value      Device     Package    Parts         Description      MF MPN     OC_FARNELL OC_NEWARK POPULARITY
+1              PINHD-1X2  1X02       JP5           PIN HEADER                                       98        
+3              PINHD-1X4  1X04       JP1, JP2, JP3 PIN HEADER                                       91        
+1              PINHD-1X6  1X06       JP4           PIN HEADER                                       79        
+1              W237-102   W237-102   X1            WAGO SCREW CLAMP    237-102 unknown    70K9898   32        
+1   ESP32_GRBL ESP32_GRBL ESP32_GRBL U$1                                                                      
