@@ -1,7 +1,12 @@
 # JKToVictronInterface
 A very rough start on an JK BMS interface for Victron Energy Systems
 
-The intention is to have a standalone device that can communicate the JKBMS details to Victron, But instead of having a master node as a single point of failure i would like all the devices *when running more than one to become the master and take over. We live off grid and cant afford for a single device to cause our power to go out. 
+This is not an arduino project, its an espressif IDF project. (IDF 4.4)
+
+You will need to familizarize yourself with it in order to make this work. Its not particularly difficult if you use VS Code. Simply install VS Code and use the espressif idf installer to install the correct version. (it will default to the latest version) 
+
+
+The intention is to have a standalone device that can communicate the JKBMS details to Victron, But when using multiple devices instead of having a master node as a single point of failure i would like all the devices *when running more than one to become the master and take over. We live off grid and cant afford for a single device to cause our power to go out. 
 
 A fair bit of of this repo has been snatched from DIY BMS, ESPHOME and others. 
 
