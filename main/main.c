@@ -9,6 +9,9 @@
 #include "JKBMSWrapper.h"
 #include "jkbmsinterface.h"
 
+#include "nvs_flash.h"
+#include "wifi_prov_mgr.h"
+
 #define EXAMPLE_TAG "VictronCanIntegration"
 twai_message_t rx_message; // Object to hold incoming messages
 
@@ -542,10 +545,40 @@ void parsePacketTask(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
+void do_setup()
+{
+// Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
 
+    // Initialize TCP/IP, and Event Loop
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    // Initialize Wi-Fi
+    ESP_ERROR_CHECK(esp_wifi_init(NULL));
+
+    // Check if device is already provisioned
+    bool provisioned = false;
+    //ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
+
+    if (!provisioned) {
+        // Start provisioning here
+        // Implement call to start provisioning
+    } else {
+        // Start normal operation as Wi-Fi is already configured
+        // Implement logic for normal operation
+    }
+
+}
 void app_main(void)
 {
   set_defaultValues();  
+  do_setup();
    //Initialize configuration structures using macro initializers
     twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(Can_TX_GPIO_NUM, Can_RX_GPIO_NUM, TWAI_MODE_NO_ACK);
     twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();

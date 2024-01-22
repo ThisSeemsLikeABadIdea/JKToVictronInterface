@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+C:/WorkingFolder/JKToVictronInterface/build/CMakeFiles/bootloader
+C:/WorkingFolder/JKToVictronInterface/build/CMakeFiles/bootloader.rule
+C:/WorkingFolder/JKToVictronInterface/build/CMakeFiles/bootloader-complete.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+C:/WorkingFolder/JKToVictronInterface/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
