@@ -1,8 +1,12 @@
 {
+<<<<<<< HEAD
     "idf.adapterTargetName": "esp32",
     "idf.flashType": "UART",
     "idf.portWin": "COM3",
     "files.associations": {
         "component_init.h": "c"
     }
+=======
+    "idf.adapterTargetName": "esp32"
+>>>>>>> e6332569fbe825b3440c749eb31c61a9c664c713
 }
