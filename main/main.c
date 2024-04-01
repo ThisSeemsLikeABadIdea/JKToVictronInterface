@@ -8,9 +8,20 @@
 #include "esp_task_wdt.h" // add to feed the WDT so we dont time out
 #include "JKBMSWrapper.h"
 #include "jkbmsinterface.h"
+#include "esp_wifi.h"
+
+#include "mqtt_client.h"
+#include "component_init.h"
+#include "component_configuration.h"
+#include "nvs_flash.h"
+
+#include "esp_check.h"
 
 #define EXAMPLE_TAG "VictronCanIntegration"
 twai_message_t rx_message; // Object to hold incoming messages
+esp_mqtt_client_handle_t client;
+
+bool mqttConnected = false;
 
 bool OverVoltAlarmRaised = false;
 bool UnderVoltAlarmRaised = false;
@@ -31,8 +42,130 @@ float currentPackV = 0; // current pack voltage.
 #define Can_RX_GPIO_NUM             22
 
 static const char* hostname = "JKBMS";
+static const char *mqttTAG = "mqtt_example";
+
+char cfg_PackName[64];
+char cfg_TopicName[64];
 
 void SetBankAndModuleText(char *buffer, uint8_t cellid);
+
+// pack values held here
+
+int16_t packvoltage;
+int16_t packcurrent;
+int16_t packtemperature;
+
+int8_t packStateOfCharge;
+int8_t packStateOfHealth;
+int8_t packStateOfChargeHR;
+ 
+    bool packOverVoltAlarmRaised = false;
+    bool packUnderVoltAlarmRaised = false;
+    bool packOverCurrentAlarmRaised = false;
+    bool packOverTempAlarmRaised = false;
+    bool packLowTempAlarmRaised = false;
+    bool packChargeEnabled = false;
+    bool packDischargeEnabled = false;
+
+
+void copy_array(int source[], int destination[], int size) {
+    for (int i = 0; i < size; i++) {
+        destination[i] = source[i];
+    }
+}
+
+char *format_json(int8_t packStateOfCharge, int8_t packStateOfHealth, int8_t packStateOfChargeHR ,float packvoltage, float packcurrent, int16_t packtemperature,
+                  bool OverVoltAlarmRaised, bool UnderVoltAlarmRaised, bool OverCurrentAlarmRaised,
+                  bool OverTempAlarmRaised, bool LowTempAlarmRaised, bool ChargeEnabled, bool DischargeEnabled) {
+    // Buffer to store the formatted JSON object
+    static char json_buffer[512]; // Adjust the buffer size as needed
+    
+
+    // Format the JSON object
+    //  snprintf(json_buffer, sizeof(json_buffer),
+    //          "{"
+    //          "\"State of Charge\": %i,"
+    //          "\"State of Health\": %i,"
+    //          "\"SOC Hi Res\": %i,"
+    //          "\"packvoltage\": %.2f,"
+    //          "\"packcurrent\": %.2f,"
+    //          "\"packtemperature\": %d,"
+    //          "\"OverVoltAlarmRaised\": %s,"
+    //          "\"UnderVoltAlarmRaised\": %s,"
+    //          "\"OverCurrentAlarmRaised\": %s,"
+    //          "\"OverTempAlarmRaised\": %s,"
+    //          "\"LowTempAlarmRaised\": %s,"
+    //          "\"ChargeEnabled\": %s,"
+    //          "\"DischargeEnabled\": %s"
+    //          "}",
+    //          packStateOfCharge, packStateOfHealth, packStateOfChargeHR,
+    //          packvoltage, packcurrent, packtemperature,
+    //          OverVoltAlarmRaised ? "true" : "false",
+    //          UnderVoltAlarmRaised ? "true" : "false",
+    //          OverCurrentAlarmRaised ? "true" : "false",
+    //          OverTempAlarmRaised ? "true" : "false",
+    //          LowTempAlarmRaised ? "true" : "false",
+    //          ChargeEnabled ? "true" : "false",
+    //          DischargeEnabled ? "true" : "false");
+
+    snprintf(json_buffer, sizeof(json_buffer),
+             "{"
+             "\"State of Charge\": %i,"
+             "\"State of Health\": %i,"
+             "\"SOC Hi Res\": %i,"
+             "\"packvoltage\": %.2f," // Use %f for float values
+             "\"packcurrent\": %.2f," // Use %f for float values
+             "\"packtemperature\": %d,"
+             "\"OverVoltAlarmRaised\": %s,"
+             "\"UnderVoltAlarmRaised\": %s,"
+             "\"OverCurrentAlarmRaised\": %s,"
+             "\"OverTempAlarmRaised\": %s,"
+             "\"LowTempAlarmRaised\": %s,"
+             "\"ChargeEnabled\": %s,"
+             "\"DischargeEnabled\": %s"
+             "}",
+             packStateOfCharge, packStateOfHealth, packStateOfChargeHR,
+             (packvoltage * 0.01), packcurrent, packtemperature,
+             OverVoltAlarmRaised ? "true" : "false",
+             UnderVoltAlarmRaised ? "true" : "false",
+             OverCurrentAlarmRaised ? "true" : "false",
+             OverTempAlarmRaised ? "true" : "false",
+             LowTempAlarmRaised ? "true" : "false",
+             ChargeEnabled ? "true" : "false",
+             DischargeEnabled ? "true" : "false");
+    
+    return json_buffer;
+}
+
+char* concat_str(const char* str1, const char* str2, const char* str3) {
+    size_t len1 = strlen(str1);
+    size_t len2 = strlen(str2);
+    size_t len3 = strlen(str3);
+
+    // Allocate memory for the concatenated string
+    char* result = (char*)malloc(len1 + len2 + len3 + 1); // +1 for the null terminator
+
+    if (result == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Copy the strings into the result buffer
+    strcpy(result, str1);
+    strcat(result, str2);
+    strcat(result, str3);
+
+    return result;
+}
+
+typedef struct {
+    char mqtt_host[64];
+    int mqtt_port;
+    char mqtt_username[64];
+    char mqtt_password[64];
+    char PackName[64];
+    char TopicName[64];
+} mqtt_config_t;
 
 typedef struct { // Battery Limits
   
@@ -115,6 +248,7 @@ typedef struct
     uint16_t numberofmodulesblockingdischarge;
     uint16_t numberofmodulesoffline;
 } Victron_message_0x372;
+
 
 
 typedef struct  {
@@ -299,9 +433,10 @@ void pylon_message_356_2() // i created this second message type as i was seeing
   data3562 data;
 
   // If current shunt is installed, use the voltage from that as it should be more accurate
-
-    data.voltage = get_pack_voltage() * 100.0;
-    data.current = get_pack_current() * 10;
+    packcurrent = get_pack_current() * 10;
+    packvoltage = get_pack_voltage() * 100.0;
+    data.voltage = packvoltage;
+    data.current = packcurrent;
 
   // Temperature 0.1 C using external temperature sensor
  
@@ -322,14 +457,9 @@ void pylon_message_356()
   }data356; // these structs come from DIY BMS, a decision needs to be made as to whether or not they stay here or move to the top of the file with the others
 
   data356 data;
-
-  // If current shunt is installed, use the voltage from that as it should be more accurate
-//  if (mysettings.currentMonitoringEnabled && currentMonitor.validReadings)
-//  {
     currentPackV = 0;
     float currentA =0;
-    currentPackV = get_pack_voltage() ;    
-    
+    currentPackV = get_pack_voltage() ;  
     
     currentA = get_pack_current();
     float BMSTemp = get_temps(2);
@@ -340,15 +470,18 @@ void pylon_message_356()
     printf("Intermeddiate BMSTemp: %f\n",BMSTemp );
     // end of  troubleshooting
 
-    data.voltage =currentPackV * 100 ;//48 * 100.0;
-    data.current = currentA  * 10;// * 10;  
-    data.temperature = BMSTemp * 0.001;//(int16_t)25 * (int16_t)10; // assuming 25c 
+    
+
+    packvoltage = currentPackV * 100 ;//48 * 100.0;
+    packcurrent = currentA  * 10;// * 10;  
+    packtemperature = BMSTemp * 0.001;//(int16_t)25 * (int16_t)10; // assuming 25c 
+
+    data.voltage = packvoltage;
+    data.current = packcurrent;  
+    data.temperature = packtemperature;//(int16_t)25 * (int16_t)10; // assuming 25c 
     send_canbus_message(0x356, (uint8_t *)&data, sizeof(data356));
     Set_Charge_Limits();
 }
-
-
-
 
 void victron_message_373(float lowestcellval, float highestcellval, float lowestcelltempval, float highestcelltempval )
 {
@@ -411,11 +544,13 @@ void victron_message_355(int stateofcharge, int stateofhealth, float highresolut
 
     VictronCanMessage0x355 data;
     // 0 SOC value un16 1 %
-    data.stateofchargevalue = (int8_t)get_state_of_Charge(); //;rules.StateOfChargeWithRulesApplied(&mysettings, currentMonitor.stateofcharge);
+    packStateOfCharge =  (int8_t)get_state_of_Charge();
+    data.stateofchargevalue = packStateOfCharge; //;rules.StateOfChargeWithRulesApplied(&mysettings, currentMonitor.stateofcharge);
     // 2 SOH value un16 1 %
-    data.stateofhealthvalue = 100; // calculate this based on delta difference in the cells 
-
-    data.highresolutionsoc = get_state_of_Charge();
+    packStateOfHealth = 100;
+    data.stateofhealthvalue = packStateOfHealth; // calculate this based on delta difference in the cells 
+    packStateOfChargeHR = get_state_of_Charge();
+    data.highresolutionsoc = packStateOfChargeHR;
     
 
     send_canbus_message(0x355, (uint8_t *)&data, sizeof(VictronCanMessage0x355));
@@ -514,7 +649,7 @@ void loop_task(void *pvParameters) {
         victron_message_372(3, 0, 0, 1); //  is populated with example data, but data is not required. to be removed        
         //void victron_message_373(float lowestcellval, float highestcellval, float lowestcelltempval, float highestcelltempval )        
         pylon_message_35c();
-        pylon_message_35e(); 
+        //pylon_message_35e();  // is duplicated ? 
         vTaskDelay(pdMS_TO_TICKS(50)); // adding delays for troubleshooting
         pylon_message_359();
         vTaskDelay(pdMS_TO_TICKS(50)); // adding delays for troubleshooting
@@ -537,11 +672,129 @@ void loop_task(void *pvParameters) {
 void parsePacketTask(void *pvParameters) {
     // Cast pvParameters to the appropriate type using C-style cast
     uint8_t* data = (uint8_t*)pvParameters;
-    // i was trying to parse the received packet here but then went down another path.
-    
+    // i was trying to parse the received packet here but then went down another path.    
     vTaskDelete(NULL);
 }
 
+// Function to load MQTT configuration from NVS
+esp_err_t load_existing_mqtt_config(mqtt_config_t *config) {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("mqtt_config", NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    size_t required_size;
+    err = nvs_get_blob(nvs_handle, "config", NULL, &required_size);
+    if (err != ESP_OK) {
+        nvs_close(nvs_handle);
+        return err;
+    }
+
+    if (required_size != sizeof(mqtt_config_t)) {
+        nvs_close(nvs_handle);
+        return ESP_ERR_NVS_INVALID_LENGTH;
+    }
+
+    err = nvs_get_blob(nvs_handle, "config", config, &required_size);
+    if (err != ESP_OK) {
+        nvs_close(nvs_handle);
+        return err;
+    }
+
+    nvs_close(nvs_handle);
+    return ESP_OK;
+}
+
+char* add_mqtt_prefix(const char *uri) {
+    // Check if "mqtt://" is already present
+    if (strncmp(uri, "mqtt://", 7) != 0) {
+        // Allocate memory for the new string, including "mqtt://" prefix
+        char *new_uri = (char *)malloc(strlen(uri) + 8); // 7 for "mqtt://", 1 for null terminator
+        if (new_uri == NULL) {
+            // Memory allocation failed
+            return NULL;
+        }
+
+        // Copy "mqtt://" prefix to the new string
+        strcpy(new_uri, "mqtt://");
+        
+        // Concatenate the original URI to the new string
+        strcat(new_uri, uri);
+
+        return new_uri;
+    } else {
+        // If "mqtt://" is already present, return the original URI
+        return strdup(uri);
+    }
+}
+
+// Function to initialize MQTT and start publishing data
+esp_err_t init_and_publish_mqtt_data() {
+    mqtt_config_t mqtt_config;
+    esp_err_t err = load_existing_mqtt_config(&mqtt_config);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(mqttTAG, "Failed to load MQTT configuration from NVS (%d)", err);
+        return err;
+    }
+
+    // Check if MQTT configuration is valid
+    if (mqtt_config.mqtt_host[0] == '\0' || mqtt_config.mqtt_port == 0) {
+        ESP_LOGE(mqttTAG, "Invalid MQTT configuration");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    copy_array(cfg_PackName, mqtt_config.PackName, 64);
+    copy_array(cfg_TopicName, mqtt_config.TopicName, 64);
+     
+    char *mqtt_uri = add_mqtt_prefix(mqtt_config.mqtt_host);
+
+    // // Initialize MQTT client configuration
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .uri = mqtt_uri,
+        .port = mqtt_config.mqtt_port,
+        // Set username and password if available
+        .username = mqtt_config.mqtt_username[0] != '\0' ? mqtt_config.mqtt_username : NULL,
+        .password = mqtt_config.mqtt_password[0] != '\0' ? mqtt_config.mqtt_password : NULL,
+    };
+
+    // Initialize MQTT client
+    client = esp_mqtt_client_init(&mqtt_cfg);
+    if (!client) {
+        ESP_LOGE(mqttTAG, "Failed to initialize MQTT client");
+        return ESP_FAIL;
+    }
+    else {
+
+    }
+
+    // Start MQTT client
+    err = esp_mqtt_client_start(client);
+    if (err != ESP_OK) {
+        ESP_LOGE(mqttTAG, "Failed to start MQTT client (%d)", err);
+        esp_mqtt_client_destroy(client);
+        return err;
+    }
+    // Once MQTT is initialized and connected, start publishing data
+    // You can implement your data publishing logic here
+    return ESP_OK;
+}
+
+void publishStats()
+{
+          char* statusTopic = concat_str(cfg_TopicName, cfg_PackName, "status");
+          // char* cellsTopic = concat_str(cfg_TopicName, cfg_PackName, "cells");
+          // char* packTopic = concat_str(cfg_TopicName, cfg_PackName, "pack");
+
+            // data.voltage = packvoltage;
+            // data.current = packcurrent;  
+            // data.temperature = packtemperature;
+           char *json_object = format_json(packStateOfCharge,packStateOfHealth,packStateOfChargeHR ,packvoltage, packcurrent, packtemperature,
+                                    packOverVoltAlarmRaised, packUnderVoltAlarmRaised, packOverCurrentAlarmRaised,
+                                    packOverTempAlarmRaised, packLowTempAlarmRaised, packChargeEnabled, packDischargeEnabled);
+          esp_mqtt_client_publish(client, statusTopic, json_object, 0, 1, 0);
+
+}
 
 void app_main(void)
 {
@@ -550,7 +803,6 @@ void app_main(void)
     twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(Can_TX_GPIO_NUM, Can_RX_GPIO_NUM, TWAI_MODE_NO_ACK);
     twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
     twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-
 
     //Install CAN driver
     if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
@@ -566,18 +818,45 @@ void app_main(void)
         printf("Failed to start driver\n");
         return;
     }
-    // to be removed, the JKBMS wrapper is now created and managed from JKBMS task
-    //  JKBMSWrapper* jkInstance = JKBMS_Create();
-    // JKBMS_Start(jkInstance);    
+
+    // Initialize the WiFi manager and other components
+    initialize_wifi_manager();
+
+    // Create even loop tasks for various componenets (CAN then JKBMS interface. Add more for MQTT, Influx etc)
+    // This is the can send loop task, it sends the victron messages based on what is captured by the JKBMS task
     xTaskCreate(loop_task, "LoopTask", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(&jkbmsTask, "JKBMS Task", 4096, NULL, 5, NULL);
-    //int transmitCounter = 1;
+    
+    // this is the JKBMS task, it will read from the JKBMS serial port
+    xTaskCreate(&jkbmsTask, "JKBMS Task", 4096, NULL, 5, NULL);   
+ 
     while(1){
       // main program loop, i was planning to work on the data sharing component and failover happening in this loop. 
       ESP_ERROR_CHECK(twai_receive(&rx_message, portMAX_DELAY));
       esp_task_wdt_reset();
-     
+       
+       if(isWifiConnected()) // if(false == true )//
+       {
+         if(mqttConnected == false){
+           esp_err_t err = init_and_publish_mqtt_data();
+           if (err != ESP_OK) {
+               ESP_LOGE(mqttTAG, "Failed to initialize and publish MQTT data (%d)", err);
+            }
+             else
+             {
+               mqttConnected = true;
+             }
+         }else
+         {
+          publishStats();
+          
+         }
+      }
+     else
+     {
+      //ESP_LOGE(mqttTAG, "Wifi is not connected");
+     }
     }
 }
+
 
 
