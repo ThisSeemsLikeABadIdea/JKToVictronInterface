@@ -1,4 +1,7 @@
-# JKToVictronInterface
+# JKToVictronInterface - Replaced 
+
+I'm not sure what happened but this no longer works with Esspressif IDF, I have replaced this with a new version (to be uploaded shortly), im leaving it here for reference until i can replace it entirely
+
 A very rough start on an JK BMS interface for Victron Energy Systems
 
 This is not an arduino project, its an espressif IDF project. (IDF 4.4)
